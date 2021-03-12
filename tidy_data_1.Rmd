@@ -1,0 +1,89 @@
+---
+title: 'Tidy data'
+author: Andrew H. Farkas
+date: "`r format(Sys.time(), '%e %B, %Y')`"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+#library(bestglm)
+#library(caret)
+#library(glmnet)
+
+# Make standard error function
+se <- function(vec, na.rm = FALSE) {
+  sd(vec, na.rm)/sqrt(n())
+}
+
+#options("scipen"=100, "digits"=4)
+```
+
+Load data
+
+```{r}
+
+#mas_dat <- read.csv("MasAllSubsAllChanAllElec.csv")
+
+#mas_dat <- read.csv("data/MasAllSubsAllChanAllElec.csv")
+
+```
+
+Add subject id, category, and timepoint labels
+
+```{r}
+mas_dat$sub_id <- mas_dat$File %>%
+  stringi::stri_extract_first_regex("[0-9]+")
+
+mas_dat$cat_num <- mas_dat$File %>%
+  stringi::stri_extract_last_regex("[0-9]+")
+
+mas_dat$cat <- as.character("place_holder")
+
+mas_dat <- cbind.data.frame(electrode = mas_dat[,2],
+                            mas_dat[,1079:1081],
+                            mas_dat[,3:1078])
+
+mas_dat$cat[mas_dat$cat_num == 1] <- "erotica"
+mas_dat$cat[mas_dat$cat_num == 2] <- "happy_an"
+mas_dat$cat[mas_dat$cat_num == 3] <- "victory"
+mas_dat$cat[mas_dat$cat_num == 4] <- "nudists"
+mas_dat$cat[mas_dat$cat_num == 5] <- "neutral_an"
+mas_dat$cat[mas_dat$cat_num == 6] <- "neutral_pe"
+mas_dat$cat[mas_dat$cat_num == 7] <- "threat_pe"
+mas_dat$cat[mas_dat$cat_num == 8] <- "threat_an"
+mas_dat$cat[mas_dat$cat_num == 9] <- "mutilation"
+
+mas_dat$electrode <- as.factor(mas_dat$electrode)
+mas_dat$sub_id <- as.factor(mas_dat$sub_id)
+mas_dat$cat_num <- as.factor(mas_dat$cat_num)
+mas_dat$cat <- as.factor(mas_dat$cat)
+```
+
+```{r}
+time_from_onset <- rep(-100, 1076)
+
+timept_dif <- 1000/512
+
+amount_of_df <- 0:1075 * timept_dif
+
+time_from_onset <- time_from_onset + amount_of_df
+
+names(mas_dat)[5:1080] <- time_from_onset %>% as.character()
+```
+
+Save data
+
+```{r}
+
+#save(mas_dat, file = "mas_dat.Rdata")
+
+#save(mas_dat, file = "data/mas_dat.Rdata")
+
+```
+
+
