@@ -395,8 +395,6 @@ ERPs are know to have more curvature in the beginning, thus why I fit the spline
 I don't know yet if I should find the fPCA components based on each subjects data or on every single ERP. So I'm going to program this such that I can swap between them. But this has to be done by an electrode at a time; I'll start with Pz.
 
 ```{r}
-load(file = "mas_dat.Rdata")
-
 mas_dat_for_fpca <- mas_dat
 electrode_used <- 31
 categories_used <- c("erotica", "neutral_pe")
@@ -499,80 +497,91 @@ mean_hat <- colMeans(smooth_curves)
 Smooth each curve and take sample covariance
 
 ```{r}
-smooth_cov <- smooth_curves
-image.plot(c(1:1076), c(1:1076), smooth_cov,
-           main ='Smooth covariance of FA (Approach 2)')
+smooth_cov <- cov(smooth_curves)
+fields::image.plot(time_ms, time_ms, smooth_cov,
+           main ='Smooth covariance')
 ```
 
-
-```{r}
-library(fields)
-smooth.cov <- cov(smooth.curves)
-image.plot(tract, tract, smooth.cov, 
-           main='Smooth covariance of FA (Approach 2)')
-```
 
 2. Spectral decomposition of the estimated covariance
 
 From the spectral decomposition of the estimated covariance function we can obtain the estimated eigenfunctions and eigenvalues.
 
 ```{r}
-svd.result0 <- eigen(smooth.cov, symmetric = TRUE)
-# names(svd.result0)
+svd_result0 <- eigen(smooth_cov, symmetric = TRUE)
+e_vectors <- svd_result0$vectors[,svd_result0$values > 0]
+e_values <- svd_result0$values[svd_result0$values > 0]
 
-evectors <- svd.result0$vectors[,svd.result0$values > 0]
-evalues <- svd.result0$values[svd.result0$values > 0]
+head(colSums(e_vectors^2)) # returns unitary vectors 
 
-head(colSums(evectors^2)) # returns unitary vectors 
 ```
 
-Since the eigen function returns unitary vectors we need to scale them by sqrt(93)
+
+Since the eigen function returns unitary vectors we need to scale them by sqrt(93)... Perhaps 93 was used because that is the number of observations so I should use 1076
 
 ```{r}
-efns0 <- evectors*sqrt(93)
-evals0 <- evalues/93
-pve <- cumsum(evals0)/sum(evals0)
-npc <- sum(pve < 0.95) + 1
+e_fns0 <- e_vectors*sqrt(93)
+e_vals0 <- e_values/93
+p_ve <- cumsum(e_vals0)/sum(e_vals0)
+n_pc <- sum(p_ve < 0.95) + 1
 
-# truncated estimated eigen components
-efns <- efns0[,1:npc]
-evals <- evals0[1:npc]
+# truncate estimated eigen components
+e_fns <- e_fns0[,1:n_pc]
+e_vals <- e_vals0[1:n_pc]
 ```
+
 
 The scree plot is given below:
 
 ```{r}
-plot(1:20, pve[1:20], pch = 16, 
-     ylab="percentage of variance explained", xlab="number of PCs",
-     main="scree plot")
+plot(1:20, p_ve[1:20], pch = 16,
+                ylab="percentage of variance explained", xlab="number of PCs",
+                main="scree plot")
 abline(h = 0.95, lty=2, col='red')
 ```
 
-Based on the scree plot we know that the first 5 principal components explain more than 95% of the variabilities in the data.
+
+
+Based on the scree plot we know that the first 8 to 9 principal components explain more than 95% of the variabilities in the data. But I hope the first explains enough to be useful.
 
 ```{r}
-matplot(tract, efns[,1:5], col=rainbow(5), 
+matplot(time_ms, e_fns[,1], col = rainbow(3),
         type='l', lty=1, lwd=2,
-        ylab="eigenfunctions", xlab="tract",
-        main="First 5 eigenfunctions")
+        ylab="eigenfunctions", xlab="time_ms",
+        main="Eigenfunctions")
+
+tibble(time_ms, 
+       first_e  = e_fns[,1],
+       second_e = e_fns[,2],
+       third_e  = e_fns[,3],
+       fourth_e = e_fns[,4]) %>% 
+  ggplot() +
+  geom_line(aes(x = time_ms, y = first_e), color = "black") +
+  geom_line(aes(x = time_ms, y = second_e), color = "red") +
+  geom_line(aes(x = time_ms, y = third_e), color = "blue")
+  
 ```
+
 
 We could also visualize the effect of each PC by plotting the μ(t) ± 2sqrt(λ_k) * ϕ_k(t).
 
 ```{r}
-k.pc <- 1
-effect <- efns[, k.pc]*2*sqrt(evals[k.pc])
-mat <- cbind(mean.hat - effect,  mean.hat + effect)
+k_pc <- 1
+erp_effect <- e_fns[, k_pc]*2*sqrt(e_vals[k_pc])
+erp_mat <- cbind(mean_hat - erp_effect, 
+                 mean_hat + erp_effect)
 
 par(mfrow=c(2,1))
-plot(tract, efns[,k.pc], lty=1, lwd=2, type='l', ylim=c(-2,2),
-     main = paste0("fPC",k.pc), ylab="", xlab="tract" )
+plot(time_ms, e_fns[,k_pc], lty=1, lwd=2, type='l', ylim=c(-1,1),
+     main = paste0("fPC",k_pc), ylab="", xlab="time_ms" )
 abline(h = 0, lty=3)
 
-matplot(tract, mat, type='p', col=c(2,4), pch = c("-", "+"),
+matplot(time_ms, erp_mat, type='p', col=c(2,4), pch = c("-", "+"),
         ylab="", xlab="tract", 
-        main = paste0("fPC",k.pc, " (",round(pve[k.pc]*100),"%)"))
-lines(tract, mean.hat, lty=1, lwd=1)
+        main = paste0("fPC",k_pc, " (",round(p_ve[k_pc]*100),"%)"))
+lines(time_ms, mean_hat, lty=1, lwd=1)
+
+
 ```
 
 3. Estimation of scores & fitted curves
@@ -586,8 +595,25 @@ And the fitted curves are given by
 Y_hat_i(t) = μ_hat(t) + ∑k=1npc ξ_hat_ik ϕ_hat_k(t).
 
 ```{r}
-demeaned <- DTI.baseline$cca - t(matrix(rep(mean.hat, n),
-                                        nrow=length(mean.hat)))
+erp_demeaned <- mas_just_dat -t(matrix(rep(mean_hat, n),                                        nrow=length(mean_hat)))
+
+erp_scores <- matrix(NA, nrow = n, ncol = n_pc)
+erp_fitted <- array(NA, dim(mas_just_dat))
+
+
+for(i in 1:n){
+  erp_scores[i,] <- colMeans(matrix(rep(erp_demeaned[i,], n_pc), nrow=1076) * e_fns)
+  erp_fitted[i,] <- mean_hat + erp_scores[i,]%*%t(e_fns)
+}
+
+matplot(time_ms, t(mas_just_dat[sel.crv,]), pch = "o", cex = 0.5,
+        ylab="", xlab="tract", main="Fitted curves")
+matlines(time_ms, t(erp_fitted[sel.crv,]), type='l', lwd=2, lty=1)
+```
+
+
+```{r}
+demeaned <- DTI.baseline$cca - t(matrix(rep(mean.hat, n),                                        nrow=length(mean.hat)))
 
 scores <- matrix(NA, nrow=n, ncol=npc)
 fitted <- array(NA, dim(DTI.baseline$cca))
