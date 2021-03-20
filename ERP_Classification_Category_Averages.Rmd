@@ -1,0 +1,164 @@
+---
+title: 'ERP Classification Category Averages'
+author: Andrew H. Farkas
+date: "`r format(Sys.time(), '%e %B, %Y')`"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+library(fdapace)
+library(fda)
+#library(bestglm)
+#library(caret)
+#library(glmnet)
+
+# Make standard error function
+se <- function(vec, na.rm = FALSE) {
+  sd(vec, na.rm)/sqrt(n())
+}
+
+#options("scipen"=100, "digits"=4)
+```
+
+
+# Load data
+
+```{r}
+load(file = "C:/Users/andre/Documents/R/data/mas_dat.Rdata")
+```
+
+# Select prediction categories
+
+Categories to choose from: 
+
+```{r}
+mas_dat$cat %>%  unique()
+```
+
+```{r}
+prediction_categories <- c("erotica", "neutral_pe")
+
+mas_dat <- mas_dat %>% filter(cat %in% prediction_categories)
+```
+
+# Separate train and test data
+
+```{r}
+set.seed(0)
+
+sample_size <- mas_dat$sub_id %>% 
+  unique() %>% 
+  length()
+
+train_sub_ids <- mas_dat$sub_id %>% 
+  unique %>% 
+  sample(size = 40, replace = F)
+
+mas_dat_train <- mas_dat %>% filter(sub_id %in% train_sub_ids)
+
+mas_dat_test <- mas_dat %>% filter(!sub_id %in% train_sub_ids)
+```
+
+# Find fPCA function on train data
+
+## Calculate with my custom B-spline
+
+My custom basis
+
+```{r}
+time_ms <- names(mas_dat)[5:ncol(mas_dat)] %>% as.numeric()
+
+range_time <- range(time_ms)
+
+breaks <- c(-100, 0, 
+            seq(5,100,5), 
+            seq(110, 300, 10), 
+            seq(350, 900, 50),
+            seq(1000, 2000, 100))
+
+
+bspline_basis <- create.bspline.basis(rangeval = range_time,
+                                      # nbasis = 42,
+                                      norder = 3,
+                                      breaks = breaks)
+
+b_vals <- eval.basis(time_ms, bspline_basis)
+X_basis <- b_vals
+```
+
+This block should (for each electrode) smooth with b-spline, find covariance matrix, calculate 1st fPCA function, then find and return dataframe with a new column with the factor score for each observation.
+
+```{r}
+#for testing
+dat <- mas_dat
+channel <- 1
+
+fPCA_score <- function(dat, X_basis) {
+
+  browser()
+  channels <- dat$electrode %>% unique()
+  
+  # Pre allocate space here
+  # code here
+  
+  for (channel in channels) {
+    
+    dat_one_channel <- dat %>% filter(electrode == channel)
+    
+    just_volts_over_time <- dat_one_channel[, 5:ncol(dat_one_channel)] 
+    
+    #Preallocate
+    smooth_curves <- array(0, dim(just_volts_over_time))
+    
+    rows <- nrow(just_volts_over_time)
+    
+    for(row_index in 1:rows){
+      y_dat <- unlist(mas_just_dat[row_index,])
+      fit   <- lm(y_dat ~ 0 + X_basis)
+      smooth_curves[row_index,] <- fit$fitted.values
+    }
+    
+    
+  }  
+
+  dat_one_channel
+  
+}
+
+fPCA_score(mas_dat_train, X_basis = X_basis)
+
+rm(dat, channel)
+
+```
+
+
+```{r}
+smooth_curves <- array(0, dim(mas_just_dat))
+n <- nrow(mas_just_dat)
+j = 1
+
+for(j in 1:n){
+  y_mas <- unlist(mas_just_dat[j,])
+  fit   <- lm(y_mas ~ 0 + X_basis)
+  smooth_curves[j,] <- fit$fitted.values
+}
+
+```
+
+
+
+
+## Calculate with automated functions
+
+# Predict with Linear Discriminant Analysis
+
+# Predict with Support Vector Machine
+
+# Predict with Gaussian Mixuture modeling 
+
+# Predict with functional support vector machine

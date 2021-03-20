@@ -396,7 +396,12 @@ I don't know yet if I should find the fPCA components based on each subjects dat
 
 ```{r}
 mas_dat_for_fpca <- mas_dat
-electrode_used <- 31
+
+# EPN electrode PO7
+electrode_used <- 25 
+# LPP electrode Pz
+electrode_used <- 31 
+
 categories_used <- c("erotica", "neutral_pe")
 mas_dat_1elec <- mas_dat %>% filter(electrode == electrode_used & cat %in% categories_used)
 mas_dat_for_fpca <- mas_dat_1elec
@@ -517,13 +522,21 @@ head(colSums(e_vectors^2)) # returns unitary vectors
 ```
 
 
-Since the eigen function returns unitary vectors we need to scale them by sqrt(93)... Perhaps 93 was used because that is the number of observations so I should use 1076
+Since the eigen function returns unitary vectors we need to scale them by sqrt(93)... Perhaps 93 was used because that is the number of observations so I should use 1076. Score are off if 93 is used instead of 1076.
 
 ```{r}
-e_fns0 <- e_vectors*sqrt(93)
-e_vals0 <- e_values/93
+# e_fns0 <- e_vectors*sqrt(93)
+# e_vals0 <- e_values/93
+
+e_fns0 <- e_vectors*sqrt(1076)
+e_vals0 <- e_values/1076
+
+
 p_ve <- cumsum(e_vals0)/sum(e_vals0)
 n_pc <- sum(p_ve < 0.95) + 1
+
+# Try just a different number of PCs
+#n_pc <- 2
 
 # truncate estimated eigen components
 e_fns <- e_fns0[,1:n_pc]
@@ -572,7 +585,7 @@ erp_mat <- cbind(mean_hat - erp_effect,
                  mean_hat + erp_effect)
 
 par(mfrow=c(2,1))
-plot(time_ms, e_fns[,k_pc], lty=1, lwd=2, type='l', ylim=c(-1,1),
+plot(time_ms, e_fns[,k_pc], lty=1, lwd=2, type='l', ylim=c(-2,2),
      main = paste0("fPC",k_pc), ylab="", xlab="time_ms" )
 abline(h = 0, lty=3)
 
@@ -602,32 +615,34 @@ erp_fitted <- array(NA, dim(mas_just_dat))
 
 
 for(i in 1:n){
-  erp_scores[i,] <- colMeans(matrix(rep(erp_demeaned[i,], n_pc), nrow=1076) * e_fns)
+  erp_scores[i,] <- colMeans(matrix(rep(as.numeric(erp_demeaned[i,]), n_pc), nrow=1076) * e_fns)
   erp_fitted[i,] <- mean_hat + erp_scores[i,]%*%t(e_fns)
 }
-
-matplot(time_ms, t(mas_just_dat[sel.crv,]), pch = "o", cex = 0.5,
-        ylab="", xlab="tract", main="Fitted curves")
-matlines(time_ms, t(erp_fitted[sel.crv,]), type='l', lwd=2, lty=1)
 ```
 
+Fit to 3 sampled ERPs
+```{r}
+set.seed(1)
+sel_crv <- sample(1:n, size = 3, replace = FALSE)
+
+
+# Fit is in right direction but off by a lot
+matplot(time_ms, t(mas_just_dat[sel_crv,]), pch = "o", cex = 0.5,
+        ylab="", xlab="time_ms", main="Fitted curves")
+matlines(time_ms, t(erp_fitted[sel_crv,]), type='l', lwd=2, lty=1)
+```
 
 ```{r}
-demeaned <- DTI.baseline$cca - t(matrix(rep(mean.hat, n),                                        nrow=length(mean.hat)))
-
-scores <- matrix(NA, nrow=n, ncol=npc)
-fitted <- array(NA, dim(DTI.baseline$cca))
-for(i in 1:n){
-  scores[i,] <- colMeans(matrix(rep(demeaned[i,], npc), nrow=93) * efns)
-  fitted[i,] <- mean.hat + scores[i,]%*%t(efns)
-}
-
-matplot(tract, t(DTI.baseline$cca[sel.crv,]), pch = "o", cex = 0.5,
-        ylab="", xlab="tract", main="Fitted curves")
-matlines(tract, t(fitted[sel.crv,]), type='l', lwd=2, lty=1)
+cbind.data.frame(mas_key, 
+                 pc_1 = erp_scores[,1]) %>% 
+  ggplot(aes(x = cat, y = pc_1))+
+  geom_boxplot()
 ```
 
-4. Already built-in functions available in R
+
+
+
+# Already built-in functions available in R
 
 There are several R functions that implement the fPCA method for the densely observed data (with/without noise):
 
@@ -646,45 +661,48 @@ There are several R functions that implement the fPCA method for the densely obs
 
 
 ```{r}
-res.face <- fpca.face(Y = DTI.baseline$cca, argvals = tract, pve = 0.95)
-names(res.face)
-```
-
-
-```{r}
-res.face$npc
+res_face <- fpca.face(Y = as.matrix((mas_just_dat)), argvals = time_ms, pve = 0.95)
+names(res_face)
 ```
 
 ```{r}
-efn.face <- res.face$efunctions*sqrt(93)
-eval.face <- res.face$evalues/93
+res_face$npc
+```
 
-matplot(tract, efn.face[,1:5], col=rainbow(5), 
+```{r}
+efn_face <- res_face$efunctions*sqrt(1076)
+eval_face <- res_face$evalues/1076
+
+matplot(time_ms, efn_face[,1:3], col=rainbow(3), 
         type='l', lty=1, lwd=2,
         ylab="", xlab="tract",
         main="First 5 eigenfunctions")
 ```
 
-```{r}
-k.pc <- 1
-mu.hat <- res.face$mu
-effect <- efn.face[,k.pc] * 2* sqrt(eval.face[k.pc])
-pve.face <- (cumsum(eval.face)/sum(eval.face))
 
-plot(tract, efn.face[,k.pc], type='l', ylim=c(-2,2))
+```{r}
+k_pc <- 1
+mu_hat <- res_face$mu
+erp_effect <- efn_face[,k_pc] * 2* sqrt(eval_face[k_pc])
+pve_face <- (cumsum(eval_face)/sum(eval_face))
+
+plot(time_ms, efn_face[,k_pc], type='l', ylim=c(-2,2))
 ```
 
-```{r}
-matplot(tract, cbind(mu.hat - effect, mu.hat + effect),
-        pch = c("-", "+"), ylab="", xlab="tract", col=c(2,4),
-        main=paste0("fPC", k.pc,"(", round(pve.face[k.pc]*100) ,"%)"))
-lines(tract, mu.hat, lty=1, lwd=1)
-```
 
 ```{r}
-matplot(tract, t(DTI.baseline$cca[sel.crv,]), pch = "o", cex = 0.5,
-        ylab="", xlab="tract", main="Fitted curves")
-matlines(tract, t(res.face$Yhat[sel.crv,]), type='l', lwd=2, lty=1)
+matplot(time_ms, cbind(mu_hat - erp_effect, mu_hat + erp_effect),
+        pch = c("-", "+"), ylab="", xlab="time_ms", col=c(2,4),
+        main=paste0("fPC", k_pc,"(", round(pve_face[k_pc]*100) ,"%)"))
+lines(time_ms, mu_hat, lty=1, lwd=1)
+```
+
+
+
+```{r}
+matplot(time_ms, t(mas_just_dat[sel_crv,]), pch = "o", cex = 0.5,
+        ylab="", xlab="time_ms", main="Fitted curves")
+matlines(time_ms, t(res_face$Yhat[sel_crv,]), type='l', lwd=2, lty=1)
 ```
 
 To use the fpca.ssvd and fpca2s functions see the following example codes:
