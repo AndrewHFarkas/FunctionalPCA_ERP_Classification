@@ -87,3 +87,242 @@ Save data
 ```
 
 
+# Create excel file of mas data by subject by electrode by picture
+
+Import numpy for array and import functions
+
+```{python}
+import numpy as np
+import array
+import struct
+```
+try just one 
+
+
+```{r}
+AR_file <<- "C:/Users/andre/Documents/Sabatlab17_18/data/Masters/MasArFiles/by pic/5.2.19 AR/1/GM.1.at.ar"
+
+reticulate::py_run_file("extract_ar.py")
+
+avg_mat <- py$avg_mat
+
+avg_mat <- as.data.frame(matrix(unlist(avg_mat), nrow = 65))
+```
+
+
+
+
+recycled function originally from PSP analyses
+
+```{r}
+batch_readavg <- function(data_folder = NULL, 
+                          extract_channels = NULL,
+                          baseline_pts = NULL,
+                          data_folders = NULL) {
+  
+  #browser()
+  
+  if (!is.character(data_folder) & !is.character(data_folders)) {
+    stop("data_folder must be a string to directory")
+  }
+  
+  if (is.null(data_folders)) {
+    
+    multi_df <- data.frame()
+    
+    files <- dir(data_folder)
+    
+    for (file_index in 2:length(files)) { # starts at 2 to exclude GM file
+      
+      current_file <- paste0(data_folder,
+                             "/",
+                             files[file_index])
+      
+      # extract_ar.py takes AR_file as input and 
+      # it needs to be in the global environment
+      AR_file <<- current_file 
+      
+      reticulate::py_run_file("extract_ar.py")
+      
+      avg_mat <- py$avg_mat
+      
+      num_electrodes <- py$ERP_dict[[7]]
+      
+      avg_mat <- matrix(unlist(avg_mat), 
+                        nrow = num_electrodes)
+      
+      if (is.vector(baseline_pts)) {
+        avg_mat <- baseline_channels(avg_mat, baseline_pts)
+      }
+      
+      if (is.vector(extract_channels)) {
+        
+        avg_mat <- avg_mat[extract_channels,]
+        avg_mat <- cbind(extract_channels, avg_mat)
+        
+      }
+      else {
+        
+        avg_mat <- cbind(1:nrow(avg_mat), avg_mat)
+        
+      }
+      
+      avg_df <- cbind.data.frame(rep(files[file_index],
+                                     nrow(avg_mat)),
+                                 avg_mat)
+      
+      avg_df <- cbind.data.frame(rep(data_folder,
+                                     nrow(avg_df)),
+                                 avg_df)
+      
+      multi_df <-  rbind.data.frame(multi_df,
+                                    avg_df)
+      
+    }
+    
+  }
+  if (is.character(data_folders)) {
+    
+    folders <- dir(data_folders)
+    
+    multi_study_df <- data.frame()
+    
+    for (folder_index in 1:length(folders)) {
+      
+      current_folder <- paste0(data_folders,
+                               "/",
+                               folders[folder_index])
+      
+      folder_df <- batch_readavg(current_folder,
+                                 extract_channels = extract_channels,
+                                 baseline_pts = baseline_pts)
+      
+      folder_df <- cbind.data.frame(rep(folders[folder_index], 
+                                        nrow(folder_df)),
+                                    folder_df)
+      
+      multi_study_df <- rbind.data.frame(multi_study_df,
+                                         folder_df)
+      
+    }
+    
+  }
+  
+  
+  if (is.null(data_folders)) {
+    multi_df
+  }
+  else {
+    multi_study_df
+  }
+}
+
+```
+
+
+```{r}
+all_folders <- "C:/Users/andre/Documents/Sabatlab17_18/data/Masters/MasArFiles/by pic/5.2.19 AR"
+
+folder <- "C:/Users/andre/Documents/Sabatlab17_18/data/Masters/MasArFiles/by pic/5.2.19 AR/Total useable"
+
+baseline <- c(0:50)
+```
+
+necessary baseline_channels function
+
+```{r}
+baseline_channels <- function(X, baseline_pts = NULL) {
+  if (is.null(baseline_pts)) {
+    stop("No baseline points selected")
+  }
+  
+  if (is.vector(X)) {
+    baseline <- X[baseline_pts] %>% mean()
+    baselined_vec <- X - baseline
+    baselined_vec
+  }
+  else if (is.matrix(X)) {
+    baselined_mat <- apply(X, 
+                           1, 
+                           baseline_channels, baseline_pts)
+    baselined_mat <- t(baselined_mat)
+    baselined_mat
+  }
+}
+```
+
+```{r}
+all_mas <- batch_readavg(data_folder = folder,
+                         baseline_pts = baseline)
+```
+
+Save data
+
+```{r}
+
+
+#save(all_mas, file = "C:/Users/andre/Documents/R/data/all_mas.Rdata")
+
+```
+
+load data
+
+```{r}
+load(file = "C:/Users/andre/Documents/R/data/all_mas.Rdata")
+
+mas_key <- read.csv("C:/Users/andre/Documents/Sabatlab17_18/data/Masters/mas_scene_key.csv")
+
+names(mas_key)[1] <- "PictureName"
+```
+
+```{r}
+all_mas %>% head()
+```
+
+
+```{r}
+all_mas[,1] <- NULL
+
+
+colnames(all_mas)[2] <- "electrode"
+
+colnames(all_mas)[3:ncol(all_mas)] <- paste0("ms",as.character(-100 + ((0:1075)*1.953125)))
+
+filename <- all_mas[,1]
+
+subid <- stringi::stri_extract_first(filename, regex = "\\d{3}")
+
+all_mas <- cbind.data.frame(all_mas[,1],
+                            subid,
+                            all_mas[,2:ncol(all_mas)])
+
+#done last beacause name will get messed up from cbind function
+colnames(all_mas)[1] <- "file_name"
+```
+
+Add category factor  
+```{r}
+scene_number <- stringi::stri_extract_first(filename, 
+                                      regex = "(\\d+)(?!.*\\d)")
+
+all_mas <- cbind.data.frame(all_mas[,1:3],
+                            scene_number,
+                            all_mas[,4:ncol(all_mas)])
+
+
+
+all_mas <- merge(y = all_mas, 
+                 x = mas_key, 
+                 by.y= "scene_number", 
+                 by.x="Picture.number")
+
+```
+
+Save data
+
+```{r}
+
+
+save(all_mas, file = "C:/Users/andre/Documents/R/data/all_mas.Rdata")
+
+```

@@ -95,16 +95,26 @@ This block should (for each electrode) smooth with b-spline, find covariance mat
 
 ```{r}
 #for testing
-dat <- mas_dat
-channel <- 1
+# dat <- mas_dat
+# channel <- 1
 
 fPCA_score <- function(dat, X_basis) {
 
-  browser()
   channels <- dat$electrode %>% unique()
   
-  # Pre allocate space here
-  # code here
+  # Preallocate space here
+  # factor_score <- rep(NA, nrow(dat))
+  # output_df <- cbind.data.frame(dat[,1:4],
+  #                               factor_score)
+  output_df <- data.frame(matrix(NA,nrow = 0, ncol = 5))
+  
+  names(output_df) <- c("electrode", 
+                        "sub_id",
+                        "cat_num",    
+                        "cat",        
+                        "erp_scores")
+  
+  
   
   for (channel in channels) {
     
@@ -118,38 +128,150 @@ fPCA_score <- function(dat, X_basis) {
     rows <- nrow(just_volts_over_time)
     
     for(row_index in 1:rows){
-      y_dat <- unlist(mas_just_dat[row_index,])
+      y_dat <- unlist(just_volts_over_time[row_index,])
       fit   <- lm(y_dat ~ 0 + X_basis)
       smooth_curves[row_index,] <- fit$fitted.values
     }
     
+    mean_hat <- colMeans(smooth_curves)
+    
+    smooth_cov <- cov(smooth_curves)
+    
+    svd_result0 <- eigen(smooth_cov, symmetric = TRUE)
+    e_vectors <- svd_result0$vectors[,svd_result0$values > 0]
+    e_values <- svd_result0$values[svd_result0$values > 0]
+    
+    e_fns0 <- e_vectors*sqrt(ncol(just_volts_over_time))
+    e_vals0 <- e_values/ncol(just_volts_over_time)
+    
+    #Maybe move out of loop
+    n_pc <- 1
+    
+    # truncate estimated eigen components
+    e_fns <- e_fns0[,1:n_pc]
+    e_vals <- e_vals0[1:n_pc]
+    
+    #concerned about this demeaning when my data is 
+    erp_demeaned <- just_volts_over_time -t(matrix(rep(mean_hat,
+                                                       rows),                                        nrow=length(mean_hat)))
+    
+    erp_scores <- matrix(NA, nrow = rows, ncol = n_pc)
+    
+    
+    for(row_index in 1:rows){
+      erp_scores[row_index,] <- 
+        colMeans(matrix(rep(as.numeric(erp_demeaned[row_index,]), 
+                            n_pc), nrow=ncol(just_volts_over_time)) * e_fns)
+    }
+    
+    dat_one_channel <- cbind.data.frame(dat_one_channel[,1:4],
+    erp_scores)
+    
+    output_df <- rbind.data.frame(output_df,
+                                  dat_one_channel)
+    
     
   }  
-
-  dat_one_channel
+  
+  output_df
   
 }
 
-fPCA_score(mas_dat_train, X_basis = X_basis)
+mas_train_scores <- fPCA_score(mas_dat_train, X_basis = X_basis)
 
-rm(dat, channel)
+
 
 ```
 
+That worked, but I don't want to save all the information needed for the test data so I'm going to have the model fPCA calculated off of he training data, but have all the scores calculated for all the obersavtions in the sam function.
 
 ```{r}
-smooth_curves <- array(0, dim(mas_just_dat))
-n <- nrow(mas_just_dat)
-j = 1
+fPCA_score_2 <- function(dat, X_basis, train_sub_ids) {
 
-for(j in 1:n){
-  y_mas <- unlist(mas_just_dat[j,])
-  fit   <- lm(y_mas ~ 0 + X_basis)
-  smooth_curves[j,] <- fit$fitted.values
+  channels <- dat$electrode %>% unique()
+  
+  # Preallocate space here
+  # factor_score <- rep(NA, nrow(dat))
+  # output_df <- cbind.data.frame(dat[,1:4],
+  #                               factor_score)
+  output_df <- data.frame(matrix(NA,nrow = 0, ncol = 5))
+  
+  names(output_df) <- c("electrode", 
+                        "sub_id",
+                        "cat_num",    
+                        "cat",        
+                        "erp_scores")
+  
+  
+  
+  for (channel in channels) {
+    
+    dat_one_channel <- dat %>% filter(electrode == channel)
+    
+    just_volts_over_time <- dat_one_channel[, 5:ncol(dat_one_channel)] 
+    
+    #Preallocate
+    smooth_curves <- array(0, dim(just_volts_over_time))
+    
+    rows <- nrow(just_volts_over_time)
+    
+    for(row_index in 1:rows){
+      y_dat <- unlist(just_volts_over_time[row_index,])
+      fit   <- lm(y_dat ~ 0 + X_basis)
+      smooth_curves[row_index,] <- fit$fitted.values
+    }
+    
+    mean_hat <- colMeans(smooth_curves[dat_one_channel$sub_id %in% train_sub_ids,])
+    
+    smooth_cov <- cov(smooth_curves[dat_one_channel$sub_id %in% train_sub_ids,])
+    
+    svd_result0 <- eigen(smooth_cov, symmetric = TRUE)
+    e_vectors <- svd_result0$vectors[,svd_result0$values > 0]
+    e_values <- svd_result0$values[svd_result0$values > 0]
+    
+    e_fns0 <- e_vectors*sqrt(ncol(just_volts_over_time))
+    e_vals0 <- e_values/ncol(just_volts_over_time)
+    
+    #Maybe move out of loop
+    n_pc <- 1
+    
+    # truncate estimated eigen components
+    e_fns <- e_fns0[,1:n_pc]
+    e_vals <- e_vals0[1:n_pc]
+    
+    #concerned about this demeaning when my data is 
+    erp_demeaned <- just_volts_over_time -t(matrix(rep(mean_hat,
+                                                       rows),
+                                                   nrow=length(mean_hat)))
+    
+    erp_scores <- matrix(NA, nrow = rows, ncol = n_pc)
+    
+    
+    for(row_index in 1:rows){
+      erp_scores[row_index,] <- 
+        colMeans(matrix(rep(as.numeric(erp_demeaned[row_index,]), 
+                            n_pc), nrow=ncol(just_volts_over_time)) * e_fns)
+    }
+    
+    
+    dat_one_channel <- cbind.data.frame(dat_one_channel[,1:4],
+    erp_scores)
+    
+    output_df <- rbind.data.frame(output_df,
+                                  dat_one_channel)
+    
+    
+  }  
+  
+  output_df
+  
 }
 
-```
+mas_train_scores <- fPCA_score_2(mas_dat, 
+                                 X_basis = X_basis,
+                                 train_sub_ids = train_sub_ids)
 
+```
 
 
 
@@ -157,8 +279,129 @@ for(j in 1:n){
 
 # Predict with Linear Discriminant Analysis
 
+```{r}
+mas_dat_train <- mas_train_scores %>% filter(sub_id %in% train_sub_ids)
+
+mas_dat_test <- mas_train_scores %>% filter(!sub_id %in% train_sub_ids)
+```
+
+pivot so get score by electrode
+
+```{r}
+mas_dat_train %>% 
+  pivot_wider(names_from = electrode, values_from = erp_scores) ->
+  mas_dat_train_wide
+
+names(mas_dat_train_wide)[4:67] <- paste0("channel_",names(mas_dat_train_wide)[4:67])
+
+mas_dat_test %>% 
+  pivot_wider(names_from = electrode, values_from = erp_scores) ->
+  mas_dat_test_wide
+
+names(mas_dat_test_wide)[4:67] <- paste0("channel_",names(mas_dat_test_wide)[4:67])
+```
+
+
+```{r}
+library(MASS)
+train_for <- as.formula(paste(colnames(mas_dat_train_wide)[3], "~",
+        paste(colnames(mas_dat_train_wide)[c(4:67)], collapse = "+"),
+        sep = ""
+    ))
+
+# Fit the model
+
+model <- lda(train_for, data = mas_dat_train_wide)
+# Make predictions
+predictions <- model %>% predict(mas_dat_test_wide)
+# Model accuracy
+mean(predictions$class==mas_dat_test_wide$cat)
+```
+```{r}
+model
+plot(model)
+```
+
+
+
 # Predict with Support Vector Machine
 
+```{r}
+library(e1071)
+```
+
+```{r}
+
+model_svm = svm(train_for, data = mas_dat_train_wide)
+
+pred <- predict(model_svm, mas_dat_train_wide)
+
+# Model accuracy
+mean(pred==mas_dat_train_wide$cat)
+
+pred <- predict(model_svm, mas_dat_test_wide)
+mean(pred==mas_dat_test_wide$cat)
+```
+
 # Predict with Gaussian Mixuture modeling 
+
+```{r}
+data_to_cluster <- mas_dat_train_wide[,4:67]
+```
+
+Supervised clustering
+
+```{r}
+class <- mas_dat_train_wide$cat %>% as.character()
+
+mod2 <- MclustDA(data_to_cluster, class, modelType = "EDDA")
+summary(mod2)
+
+class_new <- mas_dat_test_wide$cat %>% as.character()
+
+test_data <- mas_dat_test_wide[,4:67]
+
+summary(mod2, newdata = test_data, newclass = class_new)
+```
+
+
+
+
+Unsupervised clustering
+
+```{r}
+data_to_cluster <- mas_dat_train_wide[,4:67]
+
+library(mclust)
+gmm_results <- Mclust(data_to_cluster,G = 2)
+
+```
+
+```{r}
+# Plot results
+plot(gmm_results, what = "density")
+plot(geyser_mc, what = "uncertainty")
+```
+
+
+```{r}
+plot(gmm_results, what = "BIC", legendArgs = list(x = "bottomright"))
+
+gmm_results$BIC
+
+```
+
+```{r}
+gmm_results$classification
+```
+
+
+```{r}
+dr_gmm_results <- mclust::MclustDR(gmm_results,lambda = 1)
+
+dr_gmm_results$basis
+```
+
+
 
 # Predict with functional support vector machine

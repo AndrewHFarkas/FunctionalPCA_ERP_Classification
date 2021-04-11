@@ -1,0 +1,137 @@
+---
+title: 'ERP classification by sub'
+author: Andrew H. Farkas
+date: "`r format(Sys.time(), '%e %B, %Y')`"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+library(fdapace)
+library(fda)
+#library(bestglm)
+#library(caret)
+#library(glmnet)
+
+# Make standard error function
+se <- function(vec, na.rm = FALSE) {
+  sd(vec, na.rm)/sqrt(n())
+}
+
+#options("scipen"=100, "digits"=4)
+```
+
+# load data sub by pic
+
+```{r}
+load(file = "C:/Users/andre/Documents/R/data/all_mas.Rdata")
+```
+
+# tidy data
+
+<!-- test to see if data extraction worked -->
+<!-- ```{r} -->
+<!-- all_mas %>% -->
+<!--   filter(electrode == 31) %>% -->
+<!--   group_by(PictureCat) %>% -->
+<!--   summarise_all(mean) %>% -->
+<!--   pivot_longer(cols = starts_with("ms"), -->
+<!--                names_to = "time_ms", -->
+<!--                names_prefix = "ms", -->
+<!--                values_to = "voltage") -> hold -->
+
+<!-- hold$time_ms <- hold$time_ms %>% as.numeric() -->
+<!-- hold$CatNum <- hold$CatNum %>% as.factor() -->
+
+<!-- hold %>% -->
+<!--   ggplot(aes(x = time_ms, y = voltage, color = PictureCat)) + -->
+<!--   geom_line() -->
+
+<!-- rm(hold) -->
+<!-- ``` -->
+
+```{r}
+all_mas$Picture.number <- all_mas$Picture.number %>% as.factor()
+all_mas$PictureCat <- all_mas$PictureCat %>% as.factor()
+all_mas$CatNum <- all_mas$CatNum %>% as.factor()
+all_mas$subid <- all_mas$subid %>% as.factor()
+all_mas$electrode <- all_mas$electrode %>% as.factor()
+
+all_mas %>% head()
+```
+
+# Predict 2 categories
+
+```{r}
+prediction_categories <- c("Erotica", "Bodies")
+filtered_mas <- all_mas %>% filter(PictureCat %in% prediction_categories)
+```
+
+
+for sub i in sub id
+for each cat
+count number of ERPs per cat
+assign erps to one of 3 folds
+for each fold
+assign fold to test data
+train support vector on fPCA train
+find fPCA for test based on train
+predict test
+save correct percentage
+
+```{r}
+#for testing
+sub_index <- 1
+
+sub_ids <- filtered_mas$subid %>% unique()
+number_of_subs <- sub_ids %>% length()
+
+
+
+for (sub_index in 1:number_of_subs) {
+  current_sub <- sub_ids[sub_index]
+  
+  current_dat <- filtered_mas %>% filter(subid == current_sub)
+  
+  categories <- current_dat$PictureCat %>% unique()
+  number_of_cats <- categories %>% length()
+  
+  for (cat_index in 1:number_of_cats) {
+    
+    
+    
+  }
+  
+}
+```
+
+
+
+in algorithm
+
+# make 3 equally sized sets of ERPs per sub
+
+# get fpca scores for training and test
+
+# train and test 
+
+# do for other folds
+
+for number of subjects
+
+split ERPs in to 3 equally sized sets
+  
+for number of sets
+
+pull one set for testing
+    
+train on other sets
+    
+test on final set
+    
+save correct %
+    

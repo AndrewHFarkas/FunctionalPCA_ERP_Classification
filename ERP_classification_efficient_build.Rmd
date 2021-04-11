@@ -1,0 +1,202 @@
+---
+title: 'ERP Classification efficient build'
+author: Andrew H. Farkas
+date: "`r format(Sys.time(), '%e %B, %Y')`"
+output:
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(knitr)
+library(fdapace)
+library(fda)
+#library(bestglm)
+#library(caret)
+#library(glmnet)
+
+# Make standard error function
+se <- function(vec, na.rm = FALSE) {
+  sd(vec, na.rm)/sqrt(n())
+}
+
+#options("scipen"=100, "digits"=4)
+```
+
+# Load data
+
+```{r}
+load(file = "C:/Users/andre/Documents/R/data/mas_dat.Rdata")
+```
+
+
+
+```{r}
+categories_used <- c("erotica", "neutral_pe")
+mas_dat <- mas_dat %>% filter( cat %in% categories_used)
+time_ms <- names(mas_dat)[5:ncol(mas_dat)] %>% as.numeric()
+```
+
+```{r}
+set.seed(0)
+channels <- mas_dat$electrode %>% unique() %>% length()
+
+output <- data.frame()
+
+for (channel in 1:channels) {
+  
+  dat_one_channel <- mas_dat %>% filter(electrode == channel)
+  
+  just_volts_over_time <- dat_one_channel[, 5:ncol(dat_one_channel)]
+  
+  res_face <- refund::fpca.face(Y = as.matrix((just_volts_over_time)), 
+                                argvals = time_ms, 
+                                npc = 4)
+  
+  rows_to_add <- cbind.data.frame(dat_one_channel[,1:4],res_face$scores)
+  
+  output <- rbind.data.frame(output,
+                             rows_to_add)
+  
+}
+
+names(output)[5:8] <- c("PC_1", "PC_2", "PC_3", "PC_4")
+```
+
+# Separate train and test data
+
+```{r}
+set.seed(3)
+
+sample_size <- mas_dat$sub_id %>% 
+  unique() %>% 
+  length()
+
+train_sub_ids <- mas_dat$sub_id %>% 
+  unique %>% 
+  sample(size = 40, replace = F)
+
+mas_dat_train <- mas_dat %>% filter(sub_id %in% train_sub_ids)
+
+mas_dat_test <- mas_dat %>% filter(!sub_id %in% train_sub_ids)
+```
+
+# Predict with Linear Discriminant Analysis
+
+```{r}
+mas_dat_train <- output %>% filter(sub_id %in% train_sub_ids)
+
+mas_dat_test <- output %>% filter(!sub_id %in% train_sub_ids)
+```
+
+pivot so get score by electrode
+
+```{r}
+mas_dat_train[,1:5] %>% 
+  pivot_wider(names_from = electrode, values_from = PC_1) ->
+  mas_dat_train_wide
+
+names(mas_dat_train_wide)[4:67] <- paste0("channel_",names(mas_dat_train_wide)[4:67])
+
+mas_dat_test[,1:5] %>% 
+  pivot_wider(names_from = electrode, values_from = PC_1) ->
+  mas_dat_test_wide
+
+names(mas_dat_test_wide)[4:67] <- paste0("channel_",names(mas_dat_test_wide)[4:67])
+```
+
+
+```{r}
+library(MASS)
+train_for <- as.formula(paste(colnames(mas_dat_train_wide)[3], "~",
+        paste(colnames(mas_dat_train_wide)[c(4:67)], collapse = "+"),
+        sep = ""
+    ))
+
+# Fit the model
+
+model <- lda(train_for, data = mas_dat_train_wide)
+# Make predictions
+predictions <- model %>% predict(mas_dat_test_wide)
+# Model accuracy
+mean(predictions$class==mas_dat_test_wide$cat)
+```
+
+
+
+
+```{r}
+mas_dat_for_fpca <- mas_dat
+
+# EPN electrode PO7
+electrode_used <- 25 
+# LPP electrode Pz
+electrode_used <- 31 
+
+categories_used <- c("erotica", "neutral_pe")
+mas_dat_1elec <- mas_dat %>% filter(electrode == electrode_used & cat %in% categories_used)
+mas_dat_for_fpca <- mas_dat_1elec
+
+```
+
+```{r}
+time_ms <- names(mas_dat_for_fpca)[5:ncol(mas_dat_for_fpca)] %>% as.numeric()
+
+mas_key <- mas_dat_for_fpca[,1:4]
+
+mas_just_dat <- mas_dat_for_fpca[,5:ncol(mas_dat_for_fpca)]
+```
+
+```{r}
+res_face <- refund::fpca.face(Y = as.matrix((mas_just_dat)), argvals = time_ms, pve = 0.95)
+names(res_face)
+```
+
+```{r}
+res_face$npc
+```
+
+```{r}
+efn_face <- res_face$efunctions*sqrt(1076)
+eval_face <- res_face$evalues/1076
+
+matplot(time_ms, efn_face[,1:5], col=rainbow(5), 
+        type='l', lty=1, lwd=2,
+        ylab="", xlab="tract",
+        main="First 5 eigenfunctions")
+```
+
+```{r}
+k_pc <- 1
+mu_hat <- res_face$mu
+erp_effect <- efn_face[,k_pc] * 2* sqrt(eval_face[k_pc])
+pve_face <- (cumsum(eval_face)/sum(eval_face)) # this is wrong 
+
+plot(time_ms, efn_face[,k_pc], type='l', ylim=c(-2,2))
+```
+
+```{r}
+matplot(time_ms, cbind(mu_hat - erp_effect, mu_hat + erp_effect),
+        pch = c("-", "+"), ylab="", xlab="time_ms", col=c(2,4),
+        main=paste0("fPC", k_pc,"(", round(pve_face[k_pc]*100) ,"%)"))
+lines(time_ms, mu_hat, lty=1, lwd=1)
+```
+
+```{r}
+matplot(time_ms, t(mas_just_dat[sel_crv,]), pch = "o", cex = 0.5,
+        ylab="", xlab="time_ms", main="Fitted curves")
+matlines(time_ms, t(res_face$Yhat[sel_crv,]), type='l', lwd=2, lty=1)
+```
+
+```{r}
+mas_just_dat[4,] %>% as.numeric() %>% plot()
+```
+
+
+
+```{r}
+res_face$scores[,1] %>% 
+```
+
